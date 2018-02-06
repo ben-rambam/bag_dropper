@@ -3,42 +3,82 @@
 #include <opencv2/imgproc/imgproc.hpp>
 #include <opencv2/features2d.hpp>
 #include <stdio.h>
+#include "Serial.h"
+#include "Gimbal.h"
+#include <Eigen/Dense>
 
 using namespace std;
 using namespace cv;
 
 Point detectBlobs(Mat image);
 void thresholdImage(Mat & image, Mat & imgThresholded);
+int main1(int argc, char** argv);
+int main2(int argc, char** argv);
+int main5(int argc, char** argv);
+int main6(int argc, char** argv);
+int main7(int argc, char** argv);
 
 int main(int argc, char** argv)
+{
+	main7(argc, argv);
+	return 0;
+}
+
+int main1(int argc, char** argv)
 {
 	Mat image;
 	Mat imgThresholded;
 	Point blobCenter;
 
-	image = imread(argv[1], 1);
-	float scale = 4;
-	resize(image, image, Size(int(image.cols / scale), int(image.rows / scale)));
+	VideoCapture cap(argv[1]);
 
-	//threshold the image
-	thresholdImage(image, imgThresholded);
+	if (!cap.isOpened())
+	{
+		return -1;
+	}
 
-	//detect the main blob
-	blobCenter = detectBlobs(imgThresholded);
+	Size videoSize(1280, 720);
+	VideoWriter vidWriter("myVideo.avi", CV_FOURCC('M','J','P','G'), 30, videoSize);
+	Mat videoFrame;
 
-	//put a plus sign on the image at the blob center location
-	line(image, Point(blobCenter.x + 10, blobCenter.y), Point(blobCenter.x - 10, blobCenter.y), CV_RGB(255, 0, 0));
-	line(image, Point(blobCenter.x, blobCenter.y+10), Point(blobCenter.x, blobCenter.y-10), CV_RGB(255, 0, 0));
+	while (cap.read(image))
+	{
+		
 
-	namedWindow("Thresholded", 1);
-	imshow("Thresholded", imgThresholded);
+		//image = imread(argv[1], 1);
+		//cap >> image;
+		float scale = 2;
+		resize(image, image, Size(int(image.cols / scale), int(image.rows / scale)));
 
-	namedWindow("Blob Location", 1);
-	imshow("Blob Location", image);
-	waitKey();
+		//threshold the image
+		thresholdImage(image, imgThresholded);
 
+		//detect the main blob
+		blobCenter = detectBlobs(imgThresholded);
+
+		//put a plus sign on the image at the blob center location
+		line(image, Point(blobCenter.x + 20, blobCenter.y), Point(blobCenter.x - 20, blobCenter.y), CV_RGB(255, 0, 0),3);
+		line(image, Point(blobCenter.x, blobCenter.y + 20), Point(blobCenter.x, blobCenter.y - 20), CV_RGB(255, 0, 0),3);
+		//cout << "putting text" << endl;
+		putText(image, "100 ft AGL", Point(10, 30), FONT_HERSHEY_PLAIN, 2.0, CV_RGB(255, 0, 0), 3);
+
+		namedWindow("Thresholded", 1);
+		imshow("Thresholded", imgThresholded);
+
+		namedWindow("Blob Location", 1);
+		imshow("Blob Location", image);
+
+		resize(image, videoFrame, videoSize);
+		vidWriter.write(videoFrame);
+
+		if (waitKey(30) == ' ')
+		{
+			cout << "writing image" << endl;
+			imwrite("myImage.png", image);
+			break;
+		}
+	}
 	return 0;
-
 	//get the video frame and detect the target dot
 	//get the telemetry
 	//calculate gimbal corrections
@@ -72,7 +112,7 @@ Point detectBlobs(Mat image)
 	float blobSize = 0;
 	for (auto x : keypoints)
 	{
-		cout << x.pt << '\t' << x.size << endl;
+		//cout << x.pt << '\t' << x.size << endl;
 		if (x.size > blobSize)
 		{
 			blobCenter = x.pt;
@@ -92,26 +132,36 @@ void thresholdImage(Mat & image, Mat & imgThresholded)
 
 	int iLowH = 0;
 	int iLowS = 0;
-	int iLowV = 190;
+	int iLowV = 0;// 190;
 	int iHighH = 179;
-	int iHighS = 40;
+	int iHighS = 255;//40;
 	int iHighV = 255;
+
+	Scalar meanVal, stDevVal;
+	meanStdDev(imgHSV, meanVal, stDevVal);
+	cout << meanVal << ", " << stDevVal << endl;
+
+	iLowV = meanVal[2] + 2.0*stDevVal[2];
+
+	int openSize = 4;
+	int closeSize = 4;
 
 
 	inRange(imgHSV, Scalar(iLowH, iLowS, iLowV), Scalar(iHighH, iHighS, iHighV), imgThresholded);
-
-	////morphological closing (fill small holes in the foreground)
-	dilate(imgThresholded, imgThresholded, getStructuringElement(MORPH_ELLIPSE, Size(5, 5)));
-	erode(imgThresholded, imgThresholded, getStructuringElement(MORPH_ELLIPSE, Size(5, 5)));
+	
+	//morphological closing (fill small holes in the foreground)
+	dilate(imgThresholded, imgThresholded, getStructuringElement(MORPH_ELLIPSE, Size(closeSize, closeSize)));
+	erode(imgThresholded, imgThresholded, getStructuringElement(MORPH_ELLIPSE, Size(closeSize, closeSize)));
 
 	//morphological opening (remove small objects from the foreground)
-	erode(imgThresholded, imgThresholded, getStructuringElement(MORPH_ELLIPSE, Size(5, 5)));
-	dilate(imgThresholded, imgThresholded, getStructuringElement(MORPH_ELLIPSE, Size(5, 5)));
+	erode(imgThresholded, imgThresholded, getStructuringElement(MORPH_ELLIPSE, Size(openSize, openSize)));
+	dilate(imgThresholded, imgThresholded, getStructuringElement(MORPH_ELLIPSE, Size(openSize, openSize)));
+	
 }
 
 int main2(int argc, char** argv)
 {
-	VideoCapture cap(0); //capture the video from web cam
+	VideoCapture cap(argv[1]); //capture the video from web cam
 
 	if (!cap.isOpened())  // if not success, exit program
 	{
@@ -130,58 +180,82 @@ int main2(int argc, char** argv)
 	int iLowV = 0;
 	int iHighV = 255;
 
+	int stDevs = 1;
+
+	int closeSize = 3;
+	int openSize = 3;
+
 	//Create trackbars in "Control" window
-	cvCreateTrackbar("LowH", "Control", &iLowH, 179); //Hue (0 - 179)
-	cvCreateTrackbar("HighH", "Control", &iHighH, 179);
+	//cvCreateTrackbar("LowH", "Control", &iLowH, 179); //Hue (0 - 179)
+	//cvCreateTrackbar("HighH", "Control", &iHighH, 179);
 
 	cvCreateTrackbar("LowS", "Control", &iLowS, 255); //Saturation (0 - 255)
 	cvCreateTrackbar("HighS", "Control", &iHighS, 255);
 
-	cvCreateTrackbar("LowV", "Control", &iLowV, 255); //Value (0 - 255)
+	cvCreateTrackbar("stDevs", "Control", &stDevs, 30); //Value (0 - 255)
 	cvCreateTrackbar("HighV", "Control", &iHighV, 255);
+
+	cvCreateTrackbar("closeSize", "Control", &closeSize, 14); //Value (0 - 255)
+	cvCreateTrackbar("openSize", "Control", &openSize, 14);
 
 	Mat imgOriginal;
 
-	imgOriginal = imread(argv[1], 1);
+	//imgOriginal = imread(argv[1], 1);
 	int scalefactor = 3;
-	resize(imgOriginal, imgOriginal, Size(imgOriginal.cols / scalefactor, imgOriginal.rows / scalefactor));
+	//resize(imgOriginal, imgOriginal, Size(imgOriginal.cols / scalefactor, imgOriginal.rows / scalefactor));
+
+	bool mode = 1;
+	Mat imgHSV;
+	Mat imgThresholded;
 
 	while (true)
 	{
-		/*
-		bool bSuccess = cap.read(imgOriginal); // read a new frame from video
-
-
-		if (!bSuccess) //if not success, break loop
+		if (mode)
 		{
-			cout << "Cannot read a frame from video stream" << endl;
-			break;
+			bool bSuccess = cap.read(imgOriginal); // read a new frame from video
+
+
+			if (!bSuccess) //if not success, break loop
+			{
+				cout << "Cannot read a frame from video stream" << endl;
+				break;
+			}
+
+			resize(imgOriginal, imgOriginal, Size(imgOriginal.cols / scalefactor, imgOriginal.rows / scalefactor));
+
+			cvtColor(imgOriginal, imgHSV, COLOR_BGR2HSV); //Convert the captured frame from BGR to HSV
+
+			
 		}
-		*/
+
+
 		
+		// Threshold the image
+		inRange(imgHSV, Scalar(iLowH, iLowS, iLowV), Scalar(iHighH, iHighS, iHighV), imgThresholded);
+		
+																									  
+		//morphological closing (fill small holes in the foreground)
+		dilate(imgThresholded, imgThresholded, getStructuringElement(MORPH_ELLIPSE, Size(closeSize, closeSize)));
+		erode(imgThresholded, imgThresholded, getStructuringElement(MORPH_ELLIPSE, Size(closeSize, closeSize)));
 
-		Mat imgHSV;
+		//morphological opening (remove small objects from the foreground)
+		erode(imgThresholded, imgThresholded, getStructuringElement(MORPH_ELLIPSE, Size(openSize, openSize)));
+		dilate(imgThresholded, imgThresholded, getStructuringElement(MORPH_ELLIPSE, Size(openSize, openSize)));
 
-		cvtColor(imgOriginal, imgHSV, COLOR_BGR2HSV); //Convert the captured frame from BGR to HSV
-
-		Mat imgThresholded;
-
-		inRange(imgHSV, Scalar(iLowH, iLowS, iLowV), Scalar(iHighH, iHighS, iHighV), imgThresholded); //Threshold the image
-
-																									  //morphological opening (remove small objects from the foreground)
-		//erode(imgThresholded, imgThresholded, getStructuringElement(MORPH_ELLIPSE, Size(5, 5)));
-		//dilate(imgThresholded, imgThresholded, getStructuringElement(MORPH_ELLIPSE, Size(5, 5)));
-
-		////morphological closing (fill small holes in the foreground)
-		//dilate(imgThresholded, imgThresholded, getStructuringElement(MORPH_ELLIPSE, Size(5, 5)));
-		//erode(imgThresholded, imgThresholded, getStructuringElement(MORPH_ELLIPSE, Size(5, 5)));
+		
 
 		imshow("Thresholded Image", imgThresholded); //show the thresholded image
 		imshow("Original", imgOriginal); //show the original image
 
-										 /// Separate the image in 3 places ( B, G and R )
+											/// Separate the image in 3 places ( B, G and R )
 		vector<Mat> bgr_planes;
 		split(imgHSV, bgr_planes);
+
+		Scalar meanVal, stDevVal;
+		meanStdDev(imgHSV, meanVal, stDevVal);
+		cout << meanVal << ", " << stDevVal << endl;
+
+		iLowV = meanVal[2] + float(stDevs) / 10.0*stDevVal[2];
 
 		/// Establish the number of bins
 		int histSize = 256;
@@ -193,6 +267,7 @@ int main2(int argc, char** argv)
 		bool uniform = true; bool accumulate = false;
 
 		Mat b_hist, g_hist, r_hist;
+
 
 		/// Compute the histograms:
 		calcHist(&bgr_planes[0], 1, 0, Mat(), b_hist, 1, &histSize, &histRange, uniform, accumulate);
@@ -232,7 +307,17 @@ int main2(int argc, char** argv)
 		namedWindow("calcHist Demo", WINDOW_AUTOSIZE);
 		imshow("calcHist Demo", histImage);
 
-		if (waitKey(30) == 27) //wait for 'esc' key press for 30ms. If 'esc' key is pressed, break loop
+		char key = 'a';
+		key = waitKey(30);
+		cout << key << endl;
+
+		if (key == ' ')
+		{
+			mode = !mode;
+			cout << mode << endl;
+			cout << "pausing" << endl;
+		}
+		else if (key == 27) //wait for 'esc' key press for 30ms. If 'esc' key is pressed, break loop
 		{
 			cout << "esc key is pressed by user" << endl;
 			break;
@@ -427,4 +512,155 @@ int main4(int argc, char** argv)
 	}
 
 	return 0;
+}
+
+int main5(int argc, char** argv)
+{
+	CSerial serial;
+	
+	serial.Open(4, 9600);
+
+	Gimbal gimbal(serial);
+
+	float pitch = -30.0;
+
+	while (true)
+	{
+		if (gimbal.setAngle(pitch, 0.0, 0.0))
+		{
+			cout << "Success: " << pitch << endl;
+		}
+		else
+		{
+			cout << "Failure" << endl;
+		}
+		pitch = pitch + 1.0;
+		if (pitch > 30.0)
+		{
+			pitch = -30.0;
+		}
+	}
+
+	return 0;
+}
+
+int main6(int argc, char** argv)
+{
+	Mat image;
+	Mat imgThresholded;
+	Point blobCenter;
+
+	int capDevice = 1;
+	VideoCapture cap(capDevice);
+	bool canDisplay = true;
+
+	if (!cap.isOpened())
+	{
+		canDisplay = false;
+	}
+	else
+	{
+		canDisplay = true;
+	}
+
+	while (true)
+	{
+
+		if (canDisplay)
+		{
+			cap >> image;
+
+			//threshold the image
+			thresholdImage(image, imgThresholded);
+
+			//detect the main blob
+			blobCenter = detectBlobs(imgThresholded);
+
+			//put a plus sign on the image at the blob center location
+			line(image, Point(blobCenter.x + 20, blobCenter.y), Point(blobCenter.x - 20, blobCenter.y), CV_RGB(255, 0, 0), 3);
+			line(image, Point(blobCenter.x, blobCenter.y + 20), Point(blobCenter.x, blobCenter.y - 20), CV_RGB(255, 0, 0), 3);
+			//cout << "putting text" << endl;
+			putText(image, "100 ft AGL", Point(10, 30), FONT_HERSHEY_PLAIN, 2.0, CV_RGB(255, 0, 0), 3);
+
+			namedWindow("Thresholded", 1);
+			imshow("Thresholded", imgThresholded);
+
+			namedWindow("Blob Location", 1);
+			imshow("Blob Location", image);
+		}
+
+		char key = waitKey(10);
+		if (key == 'q')
+		{
+			break;
+		}
+		else if (key == 'r')
+		{
+			cap.open(capDevice);
+			if (!cap.isOpened())
+			{
+				cout << "couldn't find device: " << capDevice << endl;
+				canDisplay = false;
+			}
+			else
+			{
+				cout << "found device: " << capDevice << endl;
+				canDisplay = true;
+			}
+		}
+		else if (key == 'n')
+		{
+			capDevice = (capDevice + 1) % 2;
+			cap.open(capDevice);
+			if (!cap.isOpened())
+			{
+				cout << "couldn't find device: " << capDevice << endl;
+				canDisplay = false;
+			}
+			else
+			{
+				cout << "found device: " << capDevice << endl;
+				canDisplay = true;
+			}
+		}
+	}
+	return 0;
+	//get the video frame and detect the target dot
+	//get the telemetry
+	double groundspeed = 15;
+	double 
+	//calculate gimbal corrections
+	//overlay telemetry on image and display
+	//estimate the current pose
+	//create package with commands to send to plane
+}
+
+int main7(int argc, char **argv)
+{
+	VideoCapture cap(argv[1]);
+	if (!cap.isOpened())
+	{
+		cout << "problem opening file" << endl;
+		return -1;
+	}
+
+	Mat image;
+	int frame = 0;
+
+	namedWindow("image");
+	cap >> image;
+	cout << frame << endl;
+	while (true)
+	{
+		imshow("image", image);
+		char key = waitKey(10);
+		if (key == 'n')
+		{
+			cap >> image;
+			frame++;
+			cout << frame << endl;
+		}
+		if (key == 'q')
+			break;
+	}
 }
