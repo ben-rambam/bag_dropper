@@ -1,3 +1,5 @@
+#define _USE_MATH_DEFINES
+
 #include <iostream>
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
@@ -6,6 +8,9 @@
 #include "Serial.h"
 #include "Gimbal.h"
 #include <Eigen/Dense>
+#include <cmath>
+
+
 
 using namespace std;
 using namespace cv;
@@ -13,14 +18,64 @@ using namespace cv;
 Point detectBlobs(Mat image);
 void thresholdImage(Mat & image, Mat & imgThresholded);
 int main1(int argc, char** argv);
-int main2(int argc, char** argv);
-int main5(int argc, char** argv);
+int talkToGimbal(int argc, char** argv);
 int main6(int argc, char** argv);
-int main7(int argc, char** argv);
 
+class ExtendedKalman
+{
+public:
+	double m_dt; //The default timestep
+
+	int m = 12; //The number of elements in our state vector
+	int n = 12; //The number of elements in our sensor vector
+	int k = 0; //The number of elements in our control vector
+
+	Eigen::VectorXd x; //The state vector
+	Eigen::VectorXd z; //The sensor vector
+	Eigen::VectorXd u; //The contol vector
+
+	Eigen::VectorXd calch(Eigen::VectorXd x, Eigen::VectorXd u); // the function expressing each sensor value in terms of the state variables
+	Eigen::MatrixXd calcH(Eigen::VectorXd x, Eigen::VectorXd u); // the jacobian of the h vector wrt the state variables
+	Eigen::VectorXd calcf(Eigen::VectorXd x, Eigen::VectorXd u, double dt); // the physics model expressing the next state in terms of the current state and the inputs
+	Eigen::MatrixXd calcF(Eigen::VectorXd x, Eigen::VectorXd u, double dt); // the jacobian of the f functions wrt the state variables
+
+	Eigen::MatrixXd V; // the process noise covariance matrix
+	Eigen::MatrixXd W; // the observation noise covariance matrix
+
+	Eigen::MatrixXd P; // the covariance matrix
+	Eigen::MatrixXd K; // the kalman gain 
+
+	double sign(double value);
+
+public:
+	ExtendedKalman(double _dt);
+	int updateSensor(int index, double value);
+	int updateControl(int index, double value);
+	int updateState(double dt = -1.0);
+};
+
+using namespace Eigen;
 int main(int argc, char** argv)
 {
-	main7(argc, argv);
+	//main6(argc, argv);
+
+	ExtendedKalman ek(0.1);
+	VectorXd x(12);
+	char myvar[256];
+	x << 23.0, 41.0, 33.0, 12.0, 14.0, -1.0, -3.0, -4.0, 0.05, 0.04, 50.0, 70.0;
+	cout << x << endl;
+	VectorXd u(1);
+	u = VectorXd::Zero(1);
+	VectorXd fnew = ek.calcf(x, u, 0.1);
+	MatrixXd Fnew= ek.calcF(x, u, 0.1);
+	cout << "f: \n" << fnew << endl;
+	cout << "F: \n" << Fnew << endl;
+
+	VectorXd hnew = ek.calch(x, u);
+	MatrixXd Hnew = ek.calcH(x, u);
+	cout << "h: \n" << hnew << endl;
+	cout << "H: \n" << Hnew << endl;
+
 	return 0;
 }
 
@@ -159,362 +214,7 @@ void thresholdImage(Mat & image, Mat & imgThresholded)
 	
 }
 
-int main2(int argc, char** argv)
-{
-	VideoCapture cap(argv[1]); //capture the video from web cam
-
-	if (!cap.isOpened())  // if not success, exit program
-	{
-		cout << "Cannot open the web cam" << endl;
-		return -1;
-	}
-
-	namedWindow("Control", CV_WINDOW_AUTOSIZE); //create a window called "Control"
-
-	int iLowH = 0;
-	int iHighH = 179;
-
-	int iLowS = 0;
-	int iHighS = 255;
-
-	int iLowV = 0;
-	int iHighV = 255;
-
-	int stDevs = 1;
-
-	int closeSize = 3;
-	int openSize = 3;
-
-	//Create trackbars in "Control" window
-	//cvCreateTrackbar("LowH", "Control", &iLowH, 179); //Hue (0 - 179)
-	//cvCreateTrackbar("HighH", "Control", &iHighH, 179);
-
-	cvCreateTrackbar("LowS", "Control", &iLowS, 255); //Saturation (0 - 255)
-	cvCreateTrackbar("HighS", "Control", &iHighS, 255);
-
-	cvCreateTrackbar("stDevs", "Control", &stDevs, 30); //Value (0 - 255)
-	cvCreateTrackbar("HighV", "Control", &iHighV, 255);
-
-	cvCreateTrackbar("closeSize", "Control", &closeSize, 14); //Value (0 - 255)
-	cvCreateTrackbar("openSize", "Control", &openSize, 14);
-
-	Mat imgOriginal;
-
-	//imgOriginal = imread(argv[1], 1);
-	int scalefactor = 3;
-	//resize(imgOriginal, imgOriginal, Size(imgOriginal.cols / scalefactor, imgOriginal.rows / scalefactor));
-
-	bool mode = 1;
-	Mat imgHSV;
-	Mat imgThresholded;
-
-	while (true)
-	{
-		if (mode)
-		{
-			bool bSuccess = cap.read(imgOriginal); // read a new frame from video
-
-
-			if (!bSuccess) //if not success, break loop
-			{
-				cout << "Cannot read a frame from video stream" << endl;
-				break;
-			}
-
-			resize(imgOriginal, imgOriginal, Size(imgOriginal.cols / scalefactor, imgOriginal.rows / scalefactor));
-
-			cvtColor(imgOriginal, imgHSV, COLOR_BGR2HSV); //Convert the captured frame from BGR to HSV
-
-			
-		}
-
-
-		
-		// Threshold the image
-		inRange(imgHSV, Scalar(iLowH, iLowS, iLowV), Scalar(iHighH, iHighS, iHighV), imgThresholded);
-		
-																									  
-		//morphological closing (fill small holes in the foreground)
-		dilate(imgThresholded, imgThresholded, getStructuringElement(MORPH_ELLIPSE, Size(closeSize, closeSize)));
-		erode(imgThresholded, imgThresholded, getStructuringElement(MORPH_ELLIPSE, Size(closeSize, closeSize)));
-
-		//morphological opening (remove small objects from the foreground)
-		erode(imgThresholded, imgThresholded, getStructuringElement(MORPH_ELLIPSE, Size(openSize, openSize)));
-		dilate(imgThresholded, imgThresholded, getStructuringElement(MORPH_ELLIPSE, Size(openSize, openSize)));
-
-		
-
-		imshow("Thresholded Image", imgThresholded); //show the thresholded image
-		imshow("Original", imgOriginal); //show the original image
-
-											/// Separate the image in 3 places ( B, G and R )
-		vector<Mat> bgr_planes;
-		split(imgHSV, bgr_planes);
-
-		Scalar meanVal, stDevVal;
-		meanStdDev(imgHSV, meanVal, stDevVal);
-		cout << meanVal << ", " << stDevVal << endl;
-
-		iLowV = meanVal[2] + float(stDevs) / 10.0*stDevVal[2];
-
-		/// Establish the number of bins
-		int histSize = 256;
-
-		/// Set the ranges ( for B,G,R) )
-		float range[] = { 0, 256 };
-		const float* histRange = { range };
-
-		bool uniform = true; bool accumulate = false;
-
-		Mat b_hist, g_hist, r_hist;
-
-
-		/// Compute the histograms:
-		calcHist(&bgr_planes[0], 1, 0, Mat(), b_hist, 1, &histSize, &histRange, uniform, accumulate);
-		calcHist(&bgr_planes[1], 1, 0, Mat(), g_hist, 1, &histSize, &histRange, uniform, accumulate);
-		calcHist(&bgr_planes[2], 1, 0, Mat(), r_hist, 1, &histSize, &histRange, uniform, accumulate);
-
-		b_hist.at<float>(0) = 100;
-		g_hist.at<float>(0) = 100;
-		r_hist.at<float>(0) = 100;
-
-		// Draw the histograms for B, G and R
-		int hist_w = 512; int hist_h = 400;
-		int bin_w = cvRound((double)hist_w / histSize);
-
-		Mat histImage(hist_h, hist_w, CV_8UC3, Scalar(0, 0, 0));
-
-		/// Normalize the result to [ 0, histImage.rows ]
-		normalize(b_hist, b_hist, 0, hist_h, NORM_MINMAX, -1, Mat());
-		normalize(g_hist, g_hist, 0, hist_h, NORM_MINMAX, -1, Mat());
-		normalize(r_hist, r_hist, 0, hist_h, NORM_MINMAX, -1, Mat());
-
-		/// Draw for each channel
-		for (int i = 1; i < histSize; i++)
-		{
-			line(histImage, Point(bin_w*(i - 1), hist_h - cvRound(b_hist.at<float>(i - 1))),
-				Point(bin_w*(i), hist_h - cvRound(b_hist.at<float>(i))),
-				Scalar(255, 0, 0), 2, 8, 0);
-			line(histImage, Point(bin_w*(i - 1), hist_h - cvRound(g_hist.at<float>(i - 1))),
-				Point(bin_w*(i), hist_h - cvRound(g_hist.at<float>(i))),
-				Scalar(0, 255, 0), 2, 8, 0);
-			line(histImage, Point(bin_w*(i - 1), hist_h - cvRound(r_hist.at<float>(i - 1))),
-				Point(bin_w*(i), hist_h - cvRound(r_hist.at<float>(i))),
-				Scalar(0, 0, 255), 2, 8, 0);
-		}
-
-		/// Display
-		namedWindow("calcHist Demo", WINDOW_AUTOSIZE);
-		imshow("calcHist Demo", histImage);
-
-		char key = 'a';
-		key = waitKey(30);
-		cout << key << endl;
-
-		if (key == ' ')
-		{
-			mode = !mode;
-			cout << mode << endl;
-			cout << "pausing" << endl;
-		}
-		else if (key == 27) //wait for 'esc' key press for 30ms. If 'esc' key is pressed, break loop
-		{
-			cout << "esc key is pressed by user" << endl;
-			break;
-		}
-	}
-
-	return 0;
-
-}
-
-
-using namespace cv;
-
-int main3(int argc, char** argv)
-{
-	Mat src, hsv;
-	//if (argc != 2 || !(src = imread(argv[1], 1)).data)
-	//	return -1;
-
-	VideoCapture cap(0); //capture the video from web cam
-
-	if (!cap.isOpened())  // if not success, exit program
-	{
-		cout << "Cannot open the web cam" << endl;
-		return -1;
-	}
-
-	bool bSuccess = cap.read(src); // read a new frame from video
-
-	if (!bSuccess) //if not success, break loop
-	{
-		cout << "Cannot read a frame from video stream" << endl;
-		exit(1);
-	}
-
-	cvtColor(src, hsv, COLOR_BGR2HSV);
-
-	// Quantize the hue to 30 levels
-	// and the saturation to 32 levels
-	int hbins = 30, sbins = 32;
-	int histSize[] = { hbins, sbins };
-	// hue varies from 0 to 179, see cvtColor
-	float hranges[] = { 0, 180 };
-	// saturation varies from 0 (black-gray-white) to
-	// 255 (pure spectrum color)
-	float sranges[] = { 0, 256 };
-	const float* ranges[] = { hranges, sranges };
-	MatND hist;
-	// we compute the histogram from the 0-th and 1-st channels
-	int channels[] = { 0, 1 };
-
-	calcHist(&hsv, 1, channels, Mat(), // do not use mask
-		hist, 2, histSize, ranges,
-		true, // the histogram is uniform
-		false);
-	double maxVal = 0;
-	minMaxLoc(hist, 0, &maxVal, 0, 0);
-
-	int scale = 10;
-	Mat histImg = Mat::zeros(sbins*scale, hbins * 10, CV_8UC3);
-
-	for (int h = 0; h < hbins; h++)
-		for (int s = 0; s < sbins; s++)
-		{
-			float binVal = hist.at<float>(h, s);
-			int intensity = cvRound(binVal * 255 / maxVal);
-			rectangle(histImg, Point(h*scale, s*scale),
-				Point((h + 1)*scale - 1, (s + 1)*scale - 1),
-				Scalar::all(intensity),
-				CV_FILLED);
-		}
-	int hist_w = 512; int hist_h = 400;
-	int bin_w = cvRound((double)hist_w / hbins);
-
-	Mat histImage(hist_h, hist_w, CV_8UC3, Scalar(0, 0, 0));
-
-	for (int i = 1; i < hbins; i++)
-	{
-		line(histImage, Point(bin_w*(i - 1), hist_h - cvRound(hist.at<float>(i))),
-			Point(bin_w*(i), hist_h - cvRound(hist.at<float>(i))),
-			Scalar(255, 0, 0), 2, 8, 0);
-	}
-	for (int i = 1; i < sbins; i++)
-	{
-		line(histImage, Point(bin_w*(i - 1), hist_h - cvRound(hist.at<float>(i))),
-			Point(bin_w*(i), hist_h - cvRound(hist.at<float>(i))),
-			Scalar(255, 0, 0), 2, 8, 0);
-	}
-
-	namedWindow("Source", 1);
-	imshow("Source", src);
-
-	namedWindow("H-S Histogram", 1);
-	imshow("H-S Histogram", histImg);
-	waitKey();
-}
-
-
-
-/**
-* @function main
-*/
-int main4(int argc, char** argv)
-{
-	Mat src, dst, hsv;
-
-	///// Load image
-	//src = imread(argv[1], 1);
-
-	VideoCapture cap(0); //capture the video from web cam
-
-	if (!cap.isOpened())  // if not success, exit program
-	{
-		cout << "Cannot open the web cam" << endl;
-		return -1;
-	}
-
-	while (true)
-	{
-
-		bool bSuccess = cap.read(src); // read a new frame from video
-
-		if (!bSuccess) //if not success, break loop
-		{
-			cout << "Cannot read a frame from video stream" << endl;
-			break;
-		}
-
-		cvtColor(src, hsv, COLOR_BGR2HSV);
-
-		if (!hsv.data)
-		{
-			return -1;
-		}
-
-		/// Separate the image in 3 places ( B, G and R )
-		vector<Mat> bgr_planes;
-		split(hsv, bgr_planes);
-
-		/// Establish the number of bins
-		int histSize = 256;
-
-		/// Set the ranges ( for B,G,R) )
-		float range[] = { 0, 256 };
-		const float* histRange = { range };
-
-		bool uniform = true; bool accumulate = false;
-
-		Mat b_hist, g_hist, r_hist;
-
-		/// Compute the histograms:
-		calcHist(&bgr_planes[0], 1, 0, Mat(), b_hist, 1, &histSize, &histRange, uniform, accumulate);
-		calcHist(&bgr_planes[1], 1, 0, Mat(), g_hist, 1, &histSize, &histRange, uniform, accumulate);
-		calcHist(&bgr_planes[2], 1, 0, Mat(), r_hist, 1, &histSize, &histRange, uniform, accumulate);
-
-		// Draw the histograms for B, G and R
-		int hist_w = 512; int hist_h = 400;
-		int bin_w = cvRound((double)hist_w / histSize);
-
-		Mat histImage(hist_h, hist_w, CV_8UC3, Scalar(0, 0, 0));
-
-		/// Normalize the result to [ 0, histImage.rows ]
-		normalize(b_hist, b_hist, 0, histImage.rows, NORM_MINMAX, -1, Mat());
-		normalize(g_hist, g_hist, 0, histImage.rows, NORM_MINMAX, -1, Mat());
-		normalize(r_hist, r_hist, 0, histImage.rows, NORM_MINMAX, -1, Mat());
-
-		/// Draw for each channel
-		for (int i = 1; i < histSize; i++)
-		{
-			line(histImage, Point(bin_w*(i - 1), hist_h - cvRound(b_hist.at<float>(i - 1))),
-				Point(bin_w*(i), hist_h - cvRound(b_hist.at<float>(i))),
-				Scalar(255, 0, 0), 2, 8, 0);
-			line(histImage, Point(bin_w*(i - 1), hist_h - cvRound(g_hist.at<float>(i - 1))),
-				Point(bin_w*(i), hist_h - cvRound(g_hist.at<float>(i))),
-				Scalar(0, 255, 0), 2, 8, 0);
-			line(histImage, Point(bin_w*(i - 1), hist_h - cvRound(r_hist.at<float>(i - 1))),
-				Point(bin_w*(i), hist_h - cvRound(r_hist.at<float>(i))),
-				Scalar(0, 0, 255), 2, 8, 0);
-		}
-
-		/// Display
-		namedWindow("calcHist Demo", WINDOW_AUTOSIZE);
-		imshow("calcHist Demo", histImage);
-		namedWindow("original", WINDOW_AUTOSIZE);
-		imshow("original", src);
-
-		if (waitKey(30) == 27) //wait for 'esc' key press for 30ms. If 'esc' key is pressed, break loop
-		{
-			cout << "esc key is pressed by user" << endl;
-			break;
-		}
-	}
-
-	return 0;
-}
-
-int main5(int argc, char** argv)
+int talkToGimbal(int argc, char** argv)
 {
 	CSerial serial;
 	
@@ -628,39 +328,202 @@ int main6(int argc, char** argv)
 	//get the video frame and detect the target dot
 	//get the telemetry
 	double groundspeed = 15;
-	double 
 	//calculate gimbal corrections
 	//overlay telemetry on image and display
 	//estimate the current pose
 	//create package with commands to send to plane
 }
 
-int main7(int argc, char **argv)
+int nextState(VectorXd xold, VectorXd &xnew, VectorXd u, VectorXd &z)
 {
-	VideoCapture cap(argv[1]);
-	if (!cap.isOpened())
+	//
+}
+
+using namespace Eigen;
+
+
+double ExtendedKalman::sign(double val)
+{
+	if (val >= 0)
+		return 1.0;
+	else
+		return -1.0;
+}
+VectorXd ExtendedKalman::calch(VectorXd x, VectorXd u) // the function expressing each sensor value in terms of the state variables
+{
+	VectorXd h = VectorXd::Zero(n);
+
+	h(0) = x(0); // x position from GPS
+	h(1) = x(1); // y position from GPS
+	h(2) = tan(x(4) / x(3)); // heading from GPS
+	h(3) = sqrt(pow(x(3), 2) + pow(x(4), 2)); // speed from GPS
+	h(4) = x(2); // altitude from GPS
+	h(5) = x(2); // altitude from barometer
+	h(6) = sqrt(pow(x(3) - x(6), 2) + pow(x(4) - x(7), 2) + pow(x(5), 2)); // airspeed from pitot tube
+	h(7) = x(8); // roll of the aircraft from IMU
+	h(8) = x(9); // pitch of the aircraft from IMU
+	h(9) = tan((x(4) - x(7)) / (x(3) - x(6))); // yaw of the aircraft from IMU
+	h(10) = M_PI_2 - tan((x(4) - x(7)) / (x(3) - x(6))) - tan((x(11) - x(1)) / (x(10) - x(0))); // yaw angle to target from gimbal
+	h(11) = tan(x(2) / sqrt(pow(x(11) - x(1), 2) + pow(x(10) - x(0), 2))); //pitch angle to target from gimbal
+
+	return h;
+}
+MatrixXd ExtendedKalman::calcH(VectorXd x, VectorXd u) // the jacobian of the h vector wrt the state variables
+{
+	MatrixXd H = MatrixXd::Zero(m, n);
+
+	//numerically approximate the jacobian by perturbing each state variable in turn and storing the results
+	//calculate our baseline
+	VectorXd baseline(n);
+	VectorXd perturbed(n);
+	baseline = calch(x, u);
+	//for each state variable
+	for (int i = 0; i < n; i++)
 	{
-		cout << "problem opening file" << endl;
-		return -1;
+		//set the step value;
+		double step = 0.000001;
+		//perturb the relevant state variable;
+		x(i) += step;
+		//calculate the physics with the perturbation
+		perturbed = calch(x, u);
+		//store the finite difference derivative in the appropriate column of F
+		H.col(i) = (perturbed - baseline) / step;
+		//restore the state variable
+		x(i) -= step;
 	}
 
-	Mat image;
-	int frame = 0;
+	return H;
+}
+VectorXd ExtendedKalman::calcf(VectorXd x, VectorXd u, double dt) // the physics model expressing the next state in terms of the current state and the inputs
+{
+	cout << "m: " << m << endl;
+	VectorXd f(m);
+	f = VectorXd::Zero(m);
+	double k1 = 1.0 / 2.0*1.225 * 1.2 * 5.5/(30/2.2);
+	cout << "k1: " << k1 << endl;
+	double a0L = -4.0*M_PI / 180.0;
+	double g = 9.81; //acceleration due to gravity in m/s^2
 
-	namedWindow("image");
-	cap >> image;
-	cout << frame << endl;
-	while (true)
+	//double psi = atan2(x(4), x(3)); // yaw wrt north
+	double vpa = sqrt(pow(x(3) - x(6), 2) + pow(x(4) - x(7), 2) + pow(x(5), 2)); //airspeed. needed to calculate lift
+	cout << "vpa: " << vpa << endl;
+	double ay = k1*vpa*vpa * (x(9) - a0L)*sin(x(8)); // horizontal radial acceleration due to lift, positive right
+	cout << "ay: " << ay << endl;
+	double az = -k1*vpa*vpa*(x(9) - a0L)*cos(x(8)) + g; // vertical radial accelration due to lift, positive down
+	cout << "az: " << az << endl;
+	double cospsi = x(4) / sqrt(x(3)*x(3) + x(4)*x(4));
+	cout << "cospsi: " << cospsi << endl;
+	double sinpsi = x(3) / sqrt(x(3)*x(3) + x(4)*x(4));
+	cout << "sinpsi: " << sinpsi << endl;
+
+
+	f(0) = x(0) + x(3)*dt + 0.5*ay*dt*dt*cospsi;
+	f(1) = x(1) + x(4)*dt - 0.5*ay*dt*dt*sinpsi;
+	f(2) = x(2) + x(5)*dt - 0.5*az*dt*dt;
+	f(3) = x(3) + ay*cospsi*dt;
+	f(4) = x(4) - ay*sinpsi*dt;
+	f(5) = x(5) - az*dt;
+	f(6) = x(6);
+	f(7) = x(7);
+	f(8) = x(8);
+	f(9) = x(9);
+	f(10) = x(10);
+	f(11) = x(11);
+
+	return f;
+}
+MatrixXd ExtendedKalman::calcF(VectorXd x, VectorXd u, double dt) // the jacobian of the f functions wrt the state variables
+{
+	MatrixXd F = MatrixXd::Zero(n, n);
+	
+	//numerically approximate the jacobian by perturbing each state variable in turn and storing the results
+	//calculate our baseline
+	VectorXd baseline(n);
+	VectorXd perturbed(n);
+	baseline = calcf(x, u, dt);
+	//for each state variable
+	for (int i = 0; i < n; i++)
 	{
-		imshow("image", image);
-		char key = waitKey(10);
-		if (key == 'n')
-		{
-			cap >> image;
-			frame++;
-			cout << frame << endl;
-		}
-		if (key == 'q')
-			break;
+		//set the step value;
+		double step = 0.000001;
+		//perturb the relevant state variable;
+		x(i) += step;
+		//calculate the physics with the perturbation
+		perturbed = calcf(x, u, dt);
+		//store the finite difference derivative in the appropriate column of F
+		F.col(i) = (perturbed - baseline) / step;
+		//restore the state variable
+		x(i) -= step;
 	}
+
+	return F;
+}
+
+
+/***************************************************************************
+* This is the constructor. For this class, it doesn't do much because
+* everything in the class has been fully defined.
+***************************************************************************/
+ExtendedKalman::ExtendedKalman(double _dt) 
+{
+	m_dt = _dt;
+	V = MatrixXd::Zero(n, n); // Zero out the process noise matrix
+	// Set the relevant variables in the process noise matrix
+	W = MatrixXd::Zero(m, m); // Zero out the observation noise matrix
+	// Set the relevant variables in the observation noise matrix
+	P = MatrixXd::Ones(n, n) * 10000.0; // Set the covariance matrix to large numbers
+	K = MatrixXd::Zero(n, m); // Zero out the kalman gains
+	
+	//initialize our state estimate
+	x = MatrixXd::Zero(n, 1);
+}
+
+/***************************************************************************
+* This function should be called whenever a sensor provides additional data.
+***************************************************************************/
+int ExtendedKalman::updateSensor(int index, double value)
+{
+	z(index, 1) = value;
+	return 0;
+}
+
+/***************************************************************************
+* This function should be called whenever a control input is sent
+***************************************************************************/
+int ExtendedKalman::updateControl(int index, double value)
+{
+	u(index, 1) = value;
+	return 0;
+}
+
+/***************************************************************************
+ * This function updates the state of the Kalman filter. It should be called 
+ * as frequently as possible. If the time step is varying from 
+ * call to call, then pass dt in as a parameter. If not, the last value input
+ * will be used. This could be the value from the constructor.
+ **************************************************************************/
+int ExtendedKalman::updateState(double _dt)
+{
+	if (_dt > 0)
+	{
+		m_dt = _dt;
+	}
+
+	MatrixXd F(n,n);
+	MatrixXd H(m, n);
+
+	//xnew = f(xold,uold)
+	x = calcf(x, u, m_dt);
+	//Pnew = F(xnew,uold)*Pold*F(xnew,uold)' + V
+	F = calcF(x, u, m_dt);
+	P = F*P*F.transpose() + V;
+	//K = Pnew*H(xnew,uold)'*(Hnew*Pnew*Hnew'+W)^-1
+	H = calcH(x, u);
+	K = (H * P * H.transpose() + W).transpose().colPivHouseholderQr().solve(H*P.transpose()).transpose();
+	//xnew = xnew + Knew*(znew-h(xnew))
+	x = x + K*(z - calch(x, u));
+	//Pnew = (I-Knew*Hnew)*Pnew
+	P = (MatrixXd::Identity(n, n) - K*H(x, u))*P;
+
+	return 0;
 }
