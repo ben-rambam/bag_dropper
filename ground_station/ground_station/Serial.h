@@ -5,6 +5,7 @@
 
 #include <Windows.h>
 #include "stdafx.h"
+#include <inttypes.h>
 
 #define FC_DTRDSR       0x01
 #define FC_RTSCTS       0x02
@@ -27,7 +28,7 @@ public:
 	BOOL Close( void );
 
 	int ReadData( void *, int );
-	int SendData( const char *, int );
+	int SendData( const uint8_t *, int );
 	int ReadDataWaiting( void );
 
 	BOOL IsOpened( void ){ return( m_bOpened ); }

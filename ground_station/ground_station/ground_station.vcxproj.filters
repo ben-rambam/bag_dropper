@@ -27,6 +27,12 @@
     <ClCompile Include="Gimbal.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="ExtendedKalman.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="STorM32_Example.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Serial.h">
@@ -39,6 +45,27 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="MAVlink_include_checksum.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="ExtendedKalman.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="mavlink\include\checksum.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="mavlink\include\mavlink.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="mavlink\include\mavlink_helpers.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="mavlink\include\mavlink_protobuf_manager.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="mavlink\include\mavlink_types.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="mavlink\include\protocol.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

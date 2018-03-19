@@ -153,13 +153,22 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="ExtendedKalman.cpp" />
     <ClCompile Include="Gimbal.cpp" />
     <ClCompile Include="ground_station.cpp" />
     <ClCompile Include="Serial.cpp" />
     <ClCompile Include="stdafx.cpp" />
+    <ClCompile Include="STorM32_Example.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="ExtendedKalman.h" />
     <ClInclude Include="Gimbal.h" />
+    <ClInclude Include="mavlink\include\checksum.h" />
+    <ClInclude Include="mavlink\include\mavlink.h" />
+    <ClInclude Include="mavlink\include\mavlink_helpers.h" />
+    <ClInclude Include="mavlink\include\mavlink_protobuf_manager.hpp" />
+    <ClInclude Include="mavlink\include\mavlink_types.h" />
+    <ClInclude Include="mavlink\include\protocol.h" />
     <ClInclude Include="MAVlink_include_checksum.h" />
     <ClInclude Include="Serial.h" />
     <ClInclude Include="stdafx.h" />
