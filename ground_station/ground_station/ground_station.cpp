@@ -27,6 +27,14 @@ int main6(int argc, char** argv);
 int listenToGimbal();
 int trackDot(int argc, char** argv);
 VectorXd getU(double t);
+void onMouse(int event, int x, int y, int flags, void* userData);
+
+struct Mouse
+{
+	bool isCaptured = false;
+	Point position;
+	Point delta;
+};
 
 int main(int argc, char** argv)
 {		
@@ -341,10 +349,11 @@ KeyPoint detectBlobs(Mat image, KeyPoint prevBlob)
 		int distance = sqrt(pow(blob.pt.x - prevBlob.pt.x, 2) + pow(blob.pt.y - prevBlob.pt.y, 2));
 		int sizeDiff = abs(blob.size - prevBlob.size);
 		double cost = 100*distance + 20*sizeDiff;
+		printf("distance:\t%d\tsizeDiff:\t%d\tcost:\t%d\n", distance, sizeDiff, cost);
 		if (cost < minCost)
 		{
 			newBlob = blob;
-			minCost = cost;q
+			minCost = cost;
 		}
 	}
 
@@ -428,6 +437,7 @@ int trackDot(int argc, char** argv)
 	int controlY = 0;
 	double kpX = 10;
 	double kpY = -1;
+	
 
 	KeyPoint blob;
 	KeyPoint prevBlob;
@@ -437,13 +447,18 @@ int trackDot(int argc, char** argv)
 	Gimbal gimbal(serial);
 	gimbal.setAngle(-45, 0, 0);
 
+	Mouse mouse;
+
 	int capDevice = 1;
 	VideoCapture cap(capDevice);
 	bool canDisplay = true;
 	bool followDot = false;
+	bool followMouse = false;
+	bool foundDot = false;
 	destroyAllWindows();
 	namedWindow("Thresholded", 1);
 	namedWindow("Blob Location", 1);
+	setMouseCallback("Blob Location", &onMouse, &mouse);
 
 	if (!cap.isOpened())
 	{
@@ -454,7 +469,8 @@ int trackDot(int argc, char** argv)
 		canDisplay = true;
 		cap >> image;
 		blob.pt = Point(image.size().width / 2.0, image.size().height / 2.0);
-		blob.size = 20;
+		blob.size = 200000;
+		prevBlob = blob;
 	}
 
 	while (true)
@@ -484,8 +500,22 @@ int trackDot(int argc, char** argv)
 				//write the desired gimbal position to the gimbal.
 				//gimbal.setPitchRollYaw(controlY, 1500, controlX);
 				gimbal.setRCInputs(controlY, 0, controlX);
+			}
 
+			if (foundDot)
+			{
 				prevBlob = blob;
+			}
+		
+			if (followMouse)
+			{
+				// set the control variables based on recent mouse motion
+				controlX = -0.5*mouse.delta.x + 1500;
+				controlY = 0.5*mouse.delta.y + 1500;
+				printf("cntrl:\t%d\t%d", controlX, controlY);
+				
+				//write the desired gimbal rate tothe gimbal
+				gimbal.setRCInputs(controlY, 0, controlX);
 			}
 
 			//put a plus sign on the image at the blob center location
@@ -505,6 +535,8 @@ int trackDot(int argc, char** argv)
 		cout << "key: " << key << endl;
 		if (key == 'q')
 		{
+			gimbal.setRCInputs(1500, 1500, 1500);
+			gimbal.setAngle(0, 0, 0);
 			break;
 		}
 		else if (key == 'r')
@@ -537,9 +569,36 @@ int trackDot(int argc, char** argv)
 				canDisplay = true;
 			}
 		}
+		else if (key == 'd')
+		{
+			if (followDot)
+			{
+				followDot = false;
+			}
+			else
+			{
+				followDot = true;
+				followMouse = false;
+				mouse.isCaptured = false;
+			}
+		}
+		else if (key == 'm')
+		{
+			if (followMouse)
+			{
+				followMouse = false;
+				mouse.isCaptured = false;
+			}
+			else
+			{
+				followDot = false;
+				followMouse = true;
+				mouse.isCaptured = true;
+			}
+		}
 		else if (key == 'f')
 		{
-			followDot = !followDot;
+			foundDot = !foundDot;
 		}
 	}
 	return 0;
@@ -552,4 +611,43 @@ int trackDot(int argc, char** argv)
 	//create package with commands to send to plane
 }
 
-
+void onMouse(int event, int x, int y, int flags, void* userData)
+{
+	Mouse* mouse = (Mouse*)userData;
+	static bool wasCaptured = false;
+	static Point basePosCV;
+	static Point prevPosCV;
+	static POINT basePosWin;
+	switch( event)
+	{
+	case EVENT_MOUSEMOVE:
+		if (mouse->isCaptured && !wasCaptured)
+		{
+			GetCursorPos(&basePosWin);
+			basePosCV = Point(x, y);
+			wasCaptured = true;
+			mouse->delta.x = x - basePosCV.x;
+			mouse->delta.y = y - basePosCV.y;
+			prevPosCV = Point(x, y);
+			printf("(%d,\t%d)", mouse->delta.x, mouse->delta.y);
+			//SetCursorPos(basePosWin.x,basePosWin.y);
+			//SetCursorPos(mouse->position.x, mouse->position.y);
+		}
+		else if (mouse->isCaptured && wasCaptured)
+		{
+			mouse->delta.x = x - basePosCV.x;
+			mouse->delta.y = y - basePosCV.y;
+			prevPosCV = Point(x, y);
+			printf("(%d,\t%d)", mouse->delta.x, mouse->delta.y);
+			//SetCursorPos(basePosWin.x, basePosWin.y);
+		}
+		else if (!mouse->isCaptured && wasCaptured)
+		{
+			wasCaptured = false;
+		}
+		else if (!mouse->isCaptured && !wasCaptured)
+		{
+			//GetCursorPos(&basePosWin);
+		}
+	}
+}
